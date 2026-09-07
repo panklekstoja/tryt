@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>YT Sample Controller & TR-808 Sequencer</title>
+  <style>
+    :root {
+      --bg-color: #0a0a0a;
+      --card-bg: #141414;
+      --orange: #ff6600;
+      --orange-hover: #ff8533;
+      --green: #39ff14;
+      --text: #e0e0e0;
+      --border: #2a2a2a;
+    }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container { max-width: 900px; width: 100%; }
+    h1 { color: var(--orange); text-align: center; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px; }
+    
+    /* Top YT Section */
+    .yt-section { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 20px; }
+    .url-bar { display: flex; gap: 10px; margin-bottom: 15px; }
+    input[type="text"], input[type="number"], select {
+      background: #000; border: 1px solid var(--orange); color: #fff; padding: 8px 12px; border-radius: 4px;
+    }
+    button {
+      background: var(--orange); color: #000; border: none; padding: 8px 16px; font-weight: bold; cursor: pointer; border-radius: 4px; transition: 0.2s;
+    }
+    button:hover { background: var(--orange-hover); }
+    
+    /* Player Wrapper - responsywny i zachowujący proporcje 16:9 */
+    #player-wrapper { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 6px; background: #000; }
+    #player-wrapper iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+    /* Triggers 1-0 */
+    .triggers-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 15px; }
+    .trigger-card { background: #000; border: 1px solid var(--border); padding: 8px; border-radius: 4px; text-align: center; }
+    .trigger-card label { display: block; color: var(--orange); font-weight: bold; margin-bottom: 4px; }
+    .trigger-card input { width: 80%; text-align: center; margin-bottom: 5px; }
+    .trigger-card button { font-size: 11px; padding: 4px 8px; width: 90%; }
+
+    /* Sequencer */
+    .seq-section { background: var(--card-bg); padding: 20px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 20px; }
+    .seq-controls { display: flex; gap: 15px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; }
+    .steps-grid { display: grid; grid-template-columns: repeat(16, 1fr); gap: 6px; }
+    .step-btn {
+      aspect-ratio: 1; background: #222; border: 1px solid #444; border-radius: 4px; cursor: pointer; transition: 0.1s;
+    }
+    .step-btn.active { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+    .step-btn.current { border-color: var(--green); transform: scale(1.05); }
+    .step-btn.active.current { background: var(--green); box-shadow: 0 0 10px var(--green); }
+
+    /* Preset Manager */
+    .preset-section { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border); display: flex; gap: 10px; justify-content: space-between; }
+    
+    /* Warning Box */
+    #warning-box { display: none; background: #8b0000; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border: 1px solid #ff4d4d; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>TR-YT Controller</h1>
+
+  <!-- Ostrzeżenie o braku serwera -->
+  <div id="warning-box">
+    <strong>Błąd środowiska:</strong> Uruchomiłeś ten plik bezpośrednio z dysku (protokół <code>file://</code>). 
+    YouTube blokuje wtedy odtwarzacz ze względów bezpieczeństwa (Error 150/153).<br>
+    <strong>Rozwiązanie:</strong> Uruchom ten plik przez lokalny serwer, np. używając rozszerzenia <i>Live Server</i> w programie VS Code.
+  </div>
+
+  <!-- Odtwarzacz YT -->
+  <div class="yt-section">
+    <div class="url-bar">
+      <input type="text" id="yt-url" placeholder="Wklej link YouTube..." style="flex-grow: 1;">
+      <button onclick="loadVideo()">Załaduj</button>
+    </div>
+    
+    <!-- Element div, który zostanie zastąpiony przez iframe YouTube -->
+    <div id="player-wrapper">
+      <div id="yt-player"></div>
+    </div>
+
+    <!-- Bank Triggerów 1-0 -->
+    <div class="triggers-grid" id="triggers-container"></div>
+  </div>
+
+  <!-- Sekwencer TR-808 -->
+  <div class="seq-section">
+    <div class="seq-controls">
+      <button id="play-seq-btn" onclick="toggleSequencer()">PLAY</button>
+      <label>BPM: <input type="number" id="bpm-input" value="120" min="40" max="240" style="width: 60px;" onchange="updateBPM()"></label>
+      <button onclick="tapTempo()">TAP TEMPO</button>
+      <label style="margin-left: auto;">Edytuj ścieżkę:
+        <select id="inst-select" onchange="renderSteps()">
+          <option value="kick">Kick</option>
+          <option value="snare">Snare</option>
+          <option value="hihat">Hi-Hat</option>
+          <option value="lowtom">Low Tom</option>
+          <option value="midtom">Mid Tom</option>
+          <option value="hightom">High Tom</option>
+          <option value="crash">Crash</option>
+          <option value="ride">Ride</option>
+          <option value="shaker">Shaker</option>
+          <option value="clap">Clap</option>
+        </select>
+      </label>
+    </div>
+    <div class="steps-grid" id="steps-container"></div>
+  </div>
+
+  <!-- Zapis / Odczyt JSON -->
+  <div class="preset-section">
+    <button onclick="exportJSON()">Eksportuj Preset (JSON)</button>
+    <input type="file" id="import-file" onchange="importJSON(event)" accept=".json" style="display:none">
+    <button onclick="document.getElementById('import-file').click()">Importuj JSON</button>
+  </div>
+</div>
+
+<script>
+  // 1. Sprawdzanie protokołu (czy odpalone poprawnie na serwerze)
+  if (window.location.protocol === 'file:') {
+    document.getElementById('warning-box').style.display = 'block';
+  }
+
+  // 2. Inicjalizacja Web Audio API
+  let audioCtx;
+  function initAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }
+  // Odblokowanie audio przy pierwszym kliknięciu
+  document.body.addEventListener('click', initAudio, { once: true });
+
+  // 3. YouTube IFrame API
+  let player;
+  
+  // Ta funkcja MUSI być globalna, YT API wywoła ją po załadowaniu swojego skryptu
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('yt-player', {
+      height: '360',
+      width: '640',
+      videoId: 'M7lc1UVf-VE', // Bezpieczne wideo (Google Developers), nie wywala błędu praw autorskich
+      playerVars: {
+        'playsinline': 1,
+        'enablejsapi': 1,
+        'rel': 0, // Nie polecaj filmów z innych kanałów
+        'disablekb': 1 // Wyłączamy klawiaturę YT, żeby nie gryzła się z naszymi skrótami 1-0
+      },
+      events: {
+        'onReady': onPlayerReady,
+        'onError': onPlayerError
+      }
+    });
+  }
+
+  function onPlayerReady(event) {
+    setupDefaultTriggers();
+  }
+
+  function onPlayerError(event) {
+    if (event.data === 150 || event.data === 101) {
+      alert("Ten konkretny film z YouTube zablokował możliwość odtwarzania na zewnętrznych stronach (embed). Spróbuj wkleić inny link.");
+    }
+  }
+
+  // Pobieranie skryptu YT
+  const tag = document.createElement('script');
+  tag.src = "https://www.youtube.com/iframe_api";
+  const firstScriptTag = document.getElementsByTagName('script')[0];
+  firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+
+  // 4. Mechanika Triggerów
+  let triggers = Array(10).fill(0);
+
+  function setupDefaultTriggers() {
+    const duration = player ? player.getDuration() : 100;
+    // Dzielimy film na 10 równych fragmentów
+    for(let i = 0; i < 10; i++) {
+      triggers[i] = Math.floor((duration / 10) * (i === 0 ? 0 : i));
+    }
+    renderTriggers();
+  }
+
+  function renderTriggers() {
+    const container = document.getElementById('triggers-container');
+    container.innerHTML = '';
+    const keys = ['1','2','3','4','5','6','7','8','9','0'];
+    
+    keys.forEach((key, idx) => {
+      container.innerHTML += `
+        <div class="trigger-card">
+          <label>[ ${key} ]</label>
+          <input type="number" id="trigger-input-${idx}" value="${triggers[idx]}" onchange="updateTrigger(${idx}, this.value)">
+          <button onclick="grabCurrentTime(${idx})">Grab Time</button>
+        </div>`;
+    });
+  }
+
+  function updateTrigger(idx, value) {
+    triggers[idx] = parseFloat(value);
+  }
+
+  function grabCurrentTime(idx) {
+    if(player && player.getCurrentTime) {
+      const time = Math.floor(player.getCurrentTime());
+      triggers[idx] = time;
+      document.getElementById(`trigger-input-${idx}`).value = time;
+    }
+  }
+
+  // Obsługa skrótów klawiszowych 1-0
+  window.addEventListener('keydown', (e) => {
+    // Nie wyzwalaj jeśli użytkownik wpisuje tekst w pole
+    if(e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    
+    initAudio(); // upewnienie się, że audio jest odblokowane
+
+    const keyMap = {'1':0, '2':1, '3':2, '4':3, '5':4, '6':5, '7':6, '8':7, '9':8, '0':9};
+    
+    if (keyMap[e.key] !== undefined) {
+      e.preventDefault();
+      const time = triggers[keyMap[e.key]];
+      if(player && player.seekTo) {
+        player.seekTo(time, true);
+        player.playVideo();
+      }
+    }
+  });
+
+  // Ładowanie nowego wideo
+  function loadVideo() {
+    const url = document.getElementById('yt-url').value;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    
+    if (match && match[2].length === 11) {
+      player.loadVideoById({ videoId: match[2] });
+      // Odczekaj chwilę na załadowanie metadanych (czasu trwania) i uaktualnij triggery
+      setTimeout(setupDefaultTriggers, 1500);
+    } else {
+      alert("Niepoprawny link YouTube!");
+    }
+  }
+
+
+  // 5. Sekwencer TR-808 (Logika)
+  const tracks = ['kick','snare','hihat','lowtom','midtom','hightom','crash','ride','shaker','clap'];
+  let pattern = {};
+  tracks.forEach(t => pattern[t] = Array(16).fill(false));
+
+  let isPlaying = false;
+  let currentStep = 0;
+  let bpm = 120;
+  let intervalId = null;
+
+  function renderSteps() {
+    const inst = document.getElementById('inst-select').value;
+    const container = document.getElementById('steps-container');
+    container.innerHTML = '';
+    
+    for(let i = 0; i < 16; i++) {
+      const btn = document.createElement('button');
+      btn.className = `step-btn ${pattern[inst][i] ? 'active' : ''} ${currentStep === i && isPlaying ? 'current' : ''}`;
+      btn.onclick = () => {
+        pattern[inst][i] = !pattern[inst][i];
+        if (pattern[inst][i]) playSound(inst); // Podgląd dźwięku przy kliknięciu
+        renderSteps();
+      };
+      container.appendChild(btn);
+    }
+  }
+
+  function toggleSequencer() {
+    initAudio();
+    isPlaying = !isPlaying;
+    document.getElementById('play-seq-btn').innerText = isPlaying ? 'STOP' : 'PLAY';
+    document.getElementById('play-seq-btn').style.background = isPlaying ? '#ff3333' : 'var(--orange)';
+    
+    if(isPlaying) {
+      currentStep = 0;
+      runSequencer();
+    } else {
+      clearTimeout(intervalId);
+      renderSteps();
+    }
+  }
+
+  function runSequencer() {
+    if(!isPlaying) return;
+    
+    // Odtwórz dźwięki dla obecnego kroku
+    tracks.forEach(inst => {
+      if(pattern[inst][currentStep]) playSound(inst);
+    });
+
+    renderSteps();
+    
+    currentStep = (currentStep + 1) % 16;
+    const stepTime = (60 / bpm / 4) * 1000;
+    
+    intervalId = setTimeout(runSequencer, stepTime);
+  }
+
+  function updateBPM() { 
+    bpm = parseInt(document.getElementById('bpm-input').value); 
+  }
+
+
+  // 6. Generowanie dźwięków perkusyjnych (Synteza Web Audio)
+  function playSound(type) {
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+
+    switch(type) {
+      case 'kick':
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.5);
+        gain.gain.setValueAtTime(1, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+        osc.start(now); osc.stop(now + 0.5);
+        break;
+      case 'lowtom':
+        osc.frequency.setValueAtTime(100, now);
+        osc.frequency.exponentialRampToValueAtTime(20, now + 0.3);
+        gain.gain.setValueAtTime(0.8, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+        break;
+      case 'midtom':
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+        gain.gain.setValueAtTime(0.7, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+        break;
+      case 'hightom':
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+        gain.gain.setValueAtTime(0.6, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+        break;
+      case 'snare':
+      case 'hihat':
+      case 'shaker':
+      case 'clap':
+      case 'crash':
+      case 'ride':
+        // Szum bazowy dla instrumentów perkusjonalnych
+        const bufferSize = audioCtx.sampleRate * (type === 'crash' ? 1.5 : 0.2);
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        
+        // Dodatkowy filtr dla konkretnych brzmień
+        const filter = audioCtx.createBiquadFilter();
+        if(type === 'hihat' || type === 'shaker') {
+          filter.type = 'highpass'; filter.frequency.value = 7000;
+        } else if(type === 'crash' || type === 'ride') {
+          filter.type = 'bandpass'; filter.frequency.value = 5000;
+        } else {
+          filter.type = 'highpass'; filter.frequency.value = 1000;
+        }
+
+        const noiseGain = audioCtx.createGain();
+        noise.connect(filter); filter.connect(noiseGain); noiseGain.connect(audioCtx.destination);
+        
+        if (type === 'hihat') {
+          noiseGain.gain.setValueAtTime(0.5, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+        } else if (type === 'crash') {
+          noiseGain.gain.setValueAtTime(0.7, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 1.5);
+        } else if (type === 'ride') {
+          noiseGain.gain.setValueAtTime(0.5, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+        } else {
+          noiseGain.gain.setValueAtTime(0.7, now);
+          noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        }
+        
+        noise.start(now);
+        break;
+    }
+  }
+
+
+  // 7. Funkcja Tap Tempo
+  let tapTimes = [];
+  function tapTempo() {
+    const now = Date.now();
+    tapTimes.push(now);
+    
+    // Usuwamy stare kliknięcia po 2 sekundach przerwy
+    if (tapTimes.length > 1 && (now - tapTimes[tapTimes.length - 2]) > 2000) {
+      tapTimes = [now];
+    }
+    
+    if(tapTimes.length > 4) tapTimes.shift(); // trzymamy ostatnie 4 uderzenia
+    
+    if(tapTimes.length > 1) {
+      const diffs = [];
+      for(let i = 1; i < tapTimes.length; i++) {
+        diffs.push(tapTimes[i] - tapTimes[i-1]);
+      }
+      const avg = diffs.reduce((a,b) => a + b) / diffs.length;
+      bpm = Math.round(60000 / avg);
+      document.getElementById('bpm-input').value = bpm;
+    }
+  }
+
+
+  // 8. Zapis / Odczyt konfiguracji (JSON)
+  function exportJSON() {
+    const data = { 
+      videoId: player && player.getVideoData ? player.getVideoData().video_id : null,
+      triggers, 
+      pattern, 
+      bpm 
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type : 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'yt-808-preset.json';
+    a.click();
+  }
+
+  function importJSON(e) {
+    const file = e.target.files[0];
+    if(!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        const data = JSON.parse(evt.target.result);
+        
+        if(data.videoId && player) {
+          player.loadVideoById(data.videoId);
+        }
+        if(data.triggers) {
+          triggers = data.triggers;
+          renderTriggers();
+        }
+        if(data.pattern) {
+          pattern = data.pattern;
+        }
+        if(data.bpm) { 
+          bpm = data.bpm; 
+          document.getElementById('bpm-input').value = bpm; 
+        }
+        
+        renderSteps();
+        
+        // Zresetuj input po wczytaniu, by dało się wczytać ten sam plik ponownie
+        document.getElementById('import-file').value = '';
+      } catch (err) {
+        alert("Błąd odczytu pliku JSON!");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Wstępne wyrenderowanie siatki po wejściu na stronę
+  renderSteps();
+</script>
+</body>
+</html>
